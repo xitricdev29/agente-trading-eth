@@ -1,0 +1,10 @@
+{
+  "pronostico": "MLP",
+  "delta": 0.0005,
+  "criterio": "máx. rendimiento neto en VA; empate → menor drawdown",
+  "rend_neto_VA_%": 41.97674120204229,
+  "max_drawdown_VA_%": -54.44702065824059,
+  "operaciones_VA": 50,
+  "costo": 0.001,
+  "comprar_y_mantener_VA_%": 12.79637686283217
+}

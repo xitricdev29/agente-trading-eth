@@ -1,0 +1,9 @@
+{
+  "capital_inicial": 50000.0,
+  "costo": 0.0,
+  "deslizamiento": 0.0005,
+  "exposicion_maxima": 0.9,
+  "perdida_diaria_maxima": 0.05,
+  "antiguedad_maxima_horas": 26.0,
+  "liquidar_al_detener": false
+}
