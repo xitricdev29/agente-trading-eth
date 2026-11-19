@@ -1,6 +1,6 @@
-# Agente de trading ETH/USDT con IA local — v0.1.0
+# Agente de trading ETH/USDT con IA local — v0.1.1
 
-![versión](https://img.shields.io/badge/versión-0.1.0-blue) ![modo](https://img.shields.io/badge/modo-Paper%20(sin%20órdenes%20reales)-orange) ![LLM](https://img.shields.io/badge/LLM-Ollama%20local-black) ![licencia](https://img.shields.io/badge/licencia-MIT-green)
+![versión](https://img.shields.io/badge/versión-0.1.1-blue) ![modo](https://img.shields.io/badge/modo-Paper%20(sin%20órdenes%20reales)-orange) ![LLM](https://img.shields.io/badge/LLM-Ollama%20local-black) ![licencia](https://img.shields.io/badge/licencia-MIT-green)
 
 Agente que **observa** velas diarias de ETH/USDT en MEXC, **consulta** un modelo de deep learning entrenado en la práctica de *Deep Learning para Finanzas*, **pide una propuesta** a un LLM que corre localmente con Ollama, la **valida** con controles de riesgo deterministas y la **ejecuta solo en simulación (Paper)**. Todo queda registrado en SQLite y se muestra en un panel web.
 
@@ -14,7 +14,8 @@ Agente que **observa** velas diarias de ETH/USDT en MEXC, **consulta** un modelo
 
 | Versión | Fecha | Contenido |
 |---|---|---|
-| **0.1.0** | 2026-11-17 | Primera entrega: ciclo completo del agente (datos → modelo → LLM local → riesgo → Paper → registro → UI), gateway con API key, modo replay con comparación, 33 pruebas automatizadas. |
+| **0.1.1** | 2026-11-19 | El LLM solo puede proponer acciones válidas según la posición (esquema JSON con `enum` dinámico y `acciones_validas` en el contexto). Corrige que el modelo propusiera "comprar" con posición abierta y nunca vendiera (26 de 30 propuestas rechazadas en el primer replay con `llama3.2:3b`). 34 pruebas. |
+| 0.1.0 | 2026-11-17 | Primera entrega: ciclo completo del agente (datos → modelo → LLM local → riesgo → Paper → registro → UI), gateway con API key, modo replay con comparación, 34 pruebas automatizadas. |
 
 ## Tecnologías aplicadas
 
@@ -49,7 +50,7 @@ flowchart LR
 1. **Observar:** pide las velas a MEXC, descarta la vela en curso, valida orden, duplicados, días consecutivos, precios y antigüedad (máximo 26 h).
 2. **Pronosticar:** calcula los 20 rezagos con la misma definición del entrenamiento (contrato en `backend/modelo/contrato.json`) y obtiene el rendimiento esperado del día siguiente.
 3. **Proponer:** envía al LLM local **solo datos** (precio, pronóstico, umbral δ, indicadores, posición y patrimonio simulados). El LLM nunca recibe claves ni configuración.
-4. **Validar JSON:** exige `accion ∈ {comprar, mantener, vender}`, `simbolo = ETHUSDT`, la fecha exacta de la vela y una justificación. Cualquier desviación se rechaza.
+4. **Validar JSON:** Ollama genera con un esquema que solo admite las acciones válidas en ese estado (sin posición: mantener/comprar; con posición: mantener/vender). Además se exige `accion ∈ {comprar, mantener, vender}`, `simbolo = ETHUSDT`, la fecha exacta de la vela y una justificación. Cualquier desviación se rechaza.
 5. **Riesgo:** reglas deterministas que el LLM no puede saltarse ni modificar (exposición máxima, pérdida diaria, sin apalancamiento, sin ventas en corto, estado del agente).
 6. **Ejecutar en Paper** en la apertura de la vela siguiente (t+1), con deslizamiento, precisión y monto mínimo del par. Guarda decisión, orden y patrimonio en una sola transacción. **Una vela nunca se procesa dos veces.**
 7. **Mostrar** en la UI y esperar la siguiente vela.
@@ -63,7 +64,7 @@ agente-trading-eth/
 │   ├── config/riesgo.json # límites de riesgo (el LLM no puede modificarlos)
 │   ├── modelo/            # contrato.json + pesos versionados del modelo
 │   ├── scripts/exportar_modelo.py
-│   ├── tests/             # 33 pruebas automatizadas
+│   ├── tests/             # 34 pruebas automatizadas
 │   ├── gateway.py         # gateway con API key para Ollama
 │   ├── main.py            # API FastAPI
 │   ├── requirements.txt

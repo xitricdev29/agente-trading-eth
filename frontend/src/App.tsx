@@ -87,7 +87,7 @@ export default function App() {
         <div>
           <h1>Agente ETH/USDT</h1>
           <p className="sub">
-            v{panel?.version ?? "0.1.0"} · modo <b>Paper</b> (sin órdenes reales) · datos públicos de MEXC · LLM local {panel?.llm_modelo ?? ""}
+            v{panel?.version ?? "0.1.1"} · modo <b>Paper</b> (sin órdenes reales) · datos públicos de MEXC · LLM local {panel?.llm_modelo ?? ""}
           </p>
         </div>
         <span className={`estado estado-${panel?.estado ?? "desconocido"}`}>

@@ -160,3 +160,24 @@ def test_replay_etiquetado_y_separado_de_vivo(crear_agente):
     assert r["politicas"]["llm"]["decisiones"] == 20 and r["politicas"]["regla"]["decisiones"] == 20
     assert ag.db.filas("SELECT COUNT(*) n FROM decisiones WHERE modo='vivo'")[0]["n"] == 0
     assert ag.cartera.efectivo == ag.cfg.capital_inicial        # la cartera en vivo no se toca
+
+
+# ---------------- v0.1.1: el LLM solo puede elegir acciones válidas ----------------
+def test_esquema_restringe_acciones_segun_posicion(crear_agente):
+    cuerpos = []
+    def manejar(req):
+        cuerpos.append(json.loads(req.content))
+        ctx = json.loads(cuerpos[-1]["messages"][1]["content"])
+        return httpx.Response(200, json={"message": {"content": respuesta_valida("comprar")(ctx)}})
+    from agente.llm import ClienteLLM
+    llm = ClienteLLM("http://gateway", "k" * 32, "m", transporte=httpx.MockTransport(manejar), dormir=lambda s: None)
+    ag = crear_agente(llm=llm)
+    ag.ciclo_vivo()                                            # sin posición → compra
+    assert cuerpos[0]["format"]["properties"]["accion"]["enum"] == ["mantener", "comprar"]
+    ctx = json.loads(cuerpos[0]["messages"][1]["content"])
+    assert ctx["acciones_validas"] == ["mantener", "comprar"]
+    ag.mexc._velas = generar_velas(ahora=AHORA + DIA_MS)        # vela nueva con posición abierta
+    ag.reloj = lambda: AHORA + DIA_MS
+    ag.ciclo_vivo()
+    assert cuerpos[1]["format"]["properties"]["accion"]["enum"] == ["mantener", "vender"]
+    assert cuerpos[1]["format"]["properties"]["fecha_vela"]["enum"] == [json.loads(cuerpos[1]["messages"][1]["content"])["fecha_vela"]]

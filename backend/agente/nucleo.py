@@ -95,6 +95,8 @@ class Agente:
             "senal_regla": senal, "indicadores": {k: round(x, 6) for k, x in v["indicadores"].items()},
             "posicion_abierta": cartera.en_posicion, "unidades_eth": round(cartera.unidades, 6),
             "efectivo_usdt": round(cartera.efectivo, 2), "patrimonio_usdt": round(patrimonio_cierre, 2),
+            # Acciones con efecto real en el estado actual: el LLM solo puede elegir entre estas
+            "acciones_validas": ["mantener", "vender"] if cartera.en_posicion else ["mantener", "comprar"],
         }
 
         latencia, propuesta, error_prop = None, None, None
