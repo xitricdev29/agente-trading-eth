@@ -93,7 +93,11 @@ class Agente:
             "simbolo": SIMBOLO, "fecha_vela": fecha, "precio_cierre": round(cierre, 2),
             "pronostico_rendimiento_dia_siguiente": round(pron, 6), "umbral_delta": self.modelo.delta,
             "senal_regla": senal, "indicadores": {k: round(x, 6) for k, x in v["indicadores"].items()},
-            "posicion_abierta": cartera.en_posicion, "unidades_eth": round(cartera.unidades, 6),
+            "situacion": (f"CON POSICIÓN ({cartera.unidades:.4f} ETH). Opciones: 'vender' = cerrar la posición; "
+                          "'mantener' = conservar la posición." if cartera.en_posicion else
+                          "EN EFECTIVO (sin ETH). Opciones: 'comprar' = abrir posición con el efectivo; "
+                          "'mantener' = seguir en efectivo."),
+            "unidades_eth": round(cartera.unidades, 6),
             "efectivo_usdt": round(cartera.efectivo, 2), "patrimonio_usdt": round(patrimonio_cierre, 2),
             # Acciones con efecto real en el estado actual: el LLM solo puede elegir entre estas
             "acciones_validas": ["mantener", "vender"] if cartera.en_posicion else ["mantener", "comprar"],

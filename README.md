@@ -1,6 +1,6 @@
-# Agente de trading ETH/USDT con IA local — v0.1.1
+# Agente de trading ETH/USDT con IA local — v0.1.2
 
-![versión](https://img.shields.io/badge/versión-0.1.1-blue) ![modo](https://img.shields.io/badge/modo-Paper%20(sin%20órdenes%20reales)-orange) ![LLM](https://img.shields.io/badge/LLM-Ollama%20local-black) ![licencia](https://img.shields.io/badge/licencia-MIT-green)
+![versión](https://img.shields.io/badge/versión-0.1.2-blue) ![modo](https://img.shields.io/badge/modo-Paper%20(sin%20órdenes%20reales)-orange) ![LLM](https://img.shields.io/badge/LLM-Ollama%20local-black) ![licencia](https://img.shields.io/badge/licencia-MIT-green)
 
 Agente que **observa** velas diarias de ETH/USDT en MEXC, **consulta** un modelo de deep learning entrenado en la práctica de *Deep Learning para Finanzas*, **pide una propuesta** a un LLM que corre localmente con Ollama, la **valida** con controles de riesgo deterministas y la **ejecuta solo en simulación (Paper)**. Todo queda registrado en SQLite y se muestra en un panel web.
 
@@ -14,8 +14,9 @@ Agente que **observa** velas diarias de ETH/USDT en MEXC, **consulta** un modelo
 
 | Versión | Fecha | Contenido |
 |---|---|---|
-| **0.1.1** | 2026-11-19 | El LLM solo puede proponer acciones válidas según la posición (esquema JSON con `enum` dinámico y `acciones_validas` en el contexto). Corrige que el modelo propusiera "comprar" con posición abierta y nunca vendiera (26 de 30 propuestas rechazadas en el primer replay con `llama3.2:3b`). 34 pruebas. |
-| 0.1.0 | 2026-11-17 | Primera entrega: ciclo completo del agente (datos → modelo → LLM local → riesgo → Paper → registro → UI), gateway con API key, modo replay con comparación, 34 pruebas automatizadas. |
+| **0.1.2** | 2026-11-19 | Instrucciones del LLM sin doble negación: campo `situacion` en lenguaje claro (EN EFECTIVO / CON POSICIÓN y sus dos opciones) y guía de decisión explícita. El JSON pide la justificación **antes** de la acción para que el modelo razone antes de elegir. Corrige que `llama3.2:3b` interpretara "sin posición" como "no se puede comprar" y se quedara 30 de 30 velas en efectivo. 35 pruebas. |
+| 0.1.1 | 2026-11-19 | El LLM solo puede proponer acciones válidas según la posición (esquema JSON con `enum` dinámico y `acciones_validas` en el contexto). Corrige que el modelo propusiera "comprar" con posición abierta y nunca vendiera (26 de 30 propuestas rechazadas en el primer replay con `llama3.2:3b`). 34 pruebas. |
+| 0.1.0 | 2026-11-17 | Primera entrega: ciclo completo del agente (datos → modelo → LLM local → riesgo → Paper → registro → UI), gateway con API key, modo replay con comparación, 35 pruebas automatizadas. |
 
 ## Tecnologías aplicadas
 
@@ -64,7 +65,7 @@ agente-trading-eth/
 │   ├── config/riesgo.json # límites de riesgo (el LLM no puede modificarlos)
 │   ├── modelo/            # contrato.json + pesos versionados del modelo
 │   ├── scripts/exportar_modelo.py
-│   ├── tests/             # 34 pruebas automatizadas
+│   ├── tests/             # 35 pruebas automatizadas
 │   ├── gateway.py         # gateway con API key para Ollama
 │   ├── main.py            # API FastAPI
 │   ├── requirements.txt

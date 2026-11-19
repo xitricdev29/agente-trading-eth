@@ -181,3 +181,19 @@ def test_esquema_restringe_acciones_segun_posicion(crear_agente):
     ag.ciclo_vivo()
     assert cuerpos[1]["format"]["properties"]["accion"]["enum"] == ["mantener", "vender"]
     assert cuerpos[1]["format"]["properties"]["fecha_vela"]["enum"] == [json.loads(cuerpos[1]["messages"][1]["content"])["fecha_vela"]]
+
+
+# ---------------- v0.1.2: contexto sin doble negación y razonamiento antes de la acción ----------------
+def test_contexto_claro_y_justificacion_antes_de_la_accion(crear_agente):
+    cuerpos = []
+    def manejar(req):
+        cuerpos.append(json.loads(req.content))
+        ctx = json.loads(cuerpos[-1]["messages"][1]["content"])
+        return httpx.Response(200, json={"message": {"content": respuesta_valida("mantener")(ctx)}})
+    from agente.llm import ClienteLLM
+    ag = crear_agente(llm=ClienteLLM("http://g", "k" * 32, "m", transporte=httpx.MockTransport(manejar), dormir=lambda s: None))
+    ag.ciclo_vivo()
+    ctx = json.loads(cuerpos[0]["messages"][1]["content"])
+    assert ctx["situacion"].startswith("EN EFECTIVO") and "posicion_abierta" not in ctx
+    props = list(cuerpos[0]["format"]["properties"])
+    assert props.index("justificacion") < props.index("accion")
