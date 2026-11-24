@@ -173,12 +173,14 @@ def test_esquema_restringe_acciones_segun_posicion(crear_agente):
     llm = ClienteLLM("http://gateway", "k" * 32, "m", transporte=httpx.MockTransport(manejar), dormir=lambda s: None)
     ag = crear_agente(llm=llm)
     ag.ciclo_vivo()                                            # sin posición → compra
+    cuerpos[:] = [c for c in cuerpos if "format" in c]
     assert cuerpos[0]["format"]["properties"]["accion"]["enum"] == ["mantener", "comprar"]
     ctx = json.loads(cuerpos[0]["messages"][1]["content"])
     assert ctx["acciones_validas"] == ["mantener", "comprar"]
     ag.mexc._velas = generar_velas(ahora=AHORA + DIA_MS)        # vela nueva con posición abierta
     ag.reloj = lambda: AHORA + DIA_MS
     ag.ciclo_vivo()
+    cuerpos[:] = [c for c in cuerpos if "format" in c]
     assert cuerpos[1]["format"]["properties"]["accion"]["enum"] == ["mantener", "vender"]
     assert cuerpos[1]["format"]["properties"]["fecha_vela"]["enum"] == [json.loads(cuerpos[1]["messages"][1]["content"])["fecha_vela"]]
 
@@ -193,6 +195,7 @@ def test_contexto_claro_y_justificacion_antes_de_la_accion(crear_agente):
     from agente.llm import ClienteLLM
     ag = crear_agente(llm=ClienteLLM("http://g", "k" * 32, "m", transporte=httpx.MockTransport(manejar), dormir=lambda s: None))
     ag.ciclo_vivo()
+    cuerpos[:] = [c for c in cuerpos if "format" in c]
     ctx = json.loads(cuerpos[0]["messages"][1]["content"])
     assert ctx["situacion"].startswith("EN EFECTIVO") and "posicion_abierta" not in ctx
     props = list(cuerpos[0]["format"]["properties"])

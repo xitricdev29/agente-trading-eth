@@ -53,39 +53,102 @@ def esquema_para(contexto: dict) -> dict:
     return e
 
 
+MAX_LLAMADAS_HERRAMIENTA = 3
+
+
+def definicion_ollama(nombre: str, h: dict) -> dict:
+    return {"type": "function", "function": {"name": nombre, "description": h["descripcion"], "parameters": h["parametros"]}}
+
+
 class ClienteLLM:
     def __init__(self, gateway_url: str, api_key: str, modelo: str, timeout: float = 90.0, intentos: int = 2,
                  transporte=None, dormir=time.sleep):
         self.modelo, self.intentos, self.dormir = modelo, intentos, dormir
+        self.gateway_url = gateway_url
         self._http = httpx.Client(base_url=gateway_url, timeout=timeout, transport=transporte,
                                   headers={"Authorization": f"Bearer {api_key}"})
 
-    def proponer(self, contexto: dict) -> tuple[dict, float]:
-        esquema = esquema_para(contexto)
-        cuerpo = {"model": self.modelo, "stream": False, "format": esquema, "options": {"temperature": 0},
-                  "messages": [{"role": "system", "content": SISTEMA},
-                               {"role": "user", "content": json.dumps(contexto, ensure_ascii=False)}]}
+    # ---------------- transporte con reintentos ----------------
+    def _pedir(self, metodo: str, ruta: str, cuerpo: dict | None = None, aceptar_400: bool = False):
+        """Devuelve (respuesta_json, latencia_ms, status). Reintentos limitados con espera creciente."""
         ultimo = None
         for i in range(self.intentos):
             t0 = time.perf_counter()
             try:
-                r = self._http.post("/api/chat", json=cuerpo)
+                r = self._http.request(metodo, ruta, json=cuerpo)
             except httpx.TransportError as e:
                 ultimo = f"sin conexión con el gateway/Ollama ({type(e).__name__})"
             else:
                 latencia_ms = (time.perf_counter() - t0) * 1000
                 if r.status_code == 401:
                     raise ErrorOllama("El gateway rechazó la API key del backend (401). Revisa OLLAMA_GATEWAY_API_KEY.")
-                if r.status_code >= 500 or r.status_code == 502:
+                if r.status_code >= 500:
                     ultimo = f"gateway/Ollama respondió HTTP {r.status_code}"
+                elif r.status_code == 400 and aceptar_400:
+                    return (r.json() if r.content else {}), latencia_ms, 400
                 elif r.status_code != 200:
-                    raise ErrorOllama(f"El gateway respondió HTTP {r.status_code}: {r.text[:200]}")
+                    raise ErrorOllama(f"El gateway respondió HTTP {r.status_code} en {ruta}: {r.text[:200]}")
                 else:
-                    contenido = r.json().get("message", {}).get("content", "")
-                    return validar_respuesta(contenido, contexto), latencia_ms
+                    return r.json(), latencia_ms, 200
             if i < self.intentos - 1:
                 self.dormir(2 ** i)
         raise ErrorOllama(f"LLM no disponible: {ultimo}. Verifica que Ollama y el gateway estén en ejecución.")
+
+    def get(self, ruta: str) -> dict:
+        return self._pedir("GET", ruta)[0]
+
+    def post(self, ruta: str, cuerpo: dict) -> tuple[dict, float]:
+        d, lat, _ = self._pedir("POST", ruta, cuerpo)
+        return d, lat
+
+    # ---------------- propuesta ----------------
+    def proponer(self, contexto: dict, herramientas: dict | None = None) -> tuple[dict, float, list]:
+        """1) Ronda de observación (opcional): el LLM puede llamar herramientas de SOLO LECTURA.
+        2) Ronda de decisión: respuesta JSON restringida por esquema.
+        Devuelve (propuesta validada, latencia total ms, registro de herramientas)."""
+        mensajes = [{"role": "system", "content": SISTEMA},
+                    {"role": "user", "content": json.dumps(contexto, ensure_ascii=False)}]
+        latencia, registro = 0.0, []
+        if herramientas:
+            cuerpo = {"model": self.modelo, "stream": False, "options": {"temperature": 0}, "messages": mensajes,
+                      "tools": [definicion_ollama(n, h) for n, h in herramientas.items()]}
+            d, lat, status = self._pedir("POST", "/api/chat", cuerpo, aceptar_400=True)
+            latencia += lat
+            if status == 400:
+                registro.append({"aviso": f"el modelo no admite herramientas: {str(d.get('error', d))[:150]}"})
+            else:
+                llamadas = (d.get("message") or {}).get("tool_calls") or []
+                if llamadas:
+                    mensajes = mensajes + [d["message"]]
+                for c in llamadas[:MAX_LLAMADAS_HERRAMIENTA]:
+                    f = c.get("function", {})
+                    nombre, args = f.get("name", ""), f.get("arguments") or {}
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except json.JSONDecodeError:
+                            args = {}
+                    entrada = {"nombre": nombre, "argumentos": args, "permitida": nombre in herramientas}
+                    if not entrada["permitida"]:
+                        resultado = {"error": f"herramienta '{nombre}' no permitida; disponibles: {sorted(herramientas)}"}
+                    else:
+                        try:
+                            resultado = herramientas[nombre]["funcion"](**{k: v for k, v in args.items()
+                                                                             if k in herramientas[nombre]["parametros"].get("properties", {})})
+                        except (TypeError, ValueError) as e:
+                            resultado = {"error": f"argumentos no válidos: {e}"}
+                    entrada["resultado_resumen"] = json.dumps(resultado, ensure_ascii=False)[:300]
+                    registro.append(entrada)
+                    mensajes.append({"role": "tool", "tool_name": nombre,
+                                     "content": json.dumps(resultado, ensure_ascii=False)[:2000]})
+                if len(llamadas) > MAX_LLAMADAS_HERRAMIENTA:
+                    registro.append({"aviso": f"se ignoraron {len(llamadas) - MAX_LLAMADAS_HERRAMIENTA} llamadas (máximo {MAX_LLAMADAS_HERRAMIENTA})"})
+        cuerpo = {"model": self.modelo, "stream": False, "format": esquema_para(contexto),
+                  "options": {"temperature": 0}, "messages": mensajes}
+        d, lat = self.post("/api/chat", cuerpo)
+        latencia += lat
+        contenido = (d.get("message") or {}).get("content", "")
+        return validar_respuesta(contenido, contexto), latencia, registro
 
 
 def validar_respuesta(texto: str, contexto: dict) -> dict:

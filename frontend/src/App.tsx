@@ -87,7 +87,7 @@ export default function App() {
         <div>
           <h1>Agente ETH/USDT</h1>
           <p className="sub">
-            v{panel?.version ?? "0.1.2"} · modo <b>Paper</b> (sin órdenes reales) · datos públicos de MEXC · LLM local {panel?.llm_modelo ?? ""}
+            v{panel?.version ?? "0.2.0"} · modo <b>Paper</b> (sin órdenes reales) · datos públicos de MEXC · LLM local {panel?.llm_modelo ?? ""}
           </p>
         </div>
         <span className={`estado estado-${panel?.estado ?? "desconocido"}`}>
@@ -120,6 +120,8 @@ export default function App() {
           <Fila k="Última vela cerrada" v={d?.fecha_vela ?? "—"} />
           <Fila k="Cierre" v={usd(d?.precio_cierre)} />
           <Fila k="Último ciclo" v={panel?.ultimo_ciclo ? `${fechaCorta(panel.ultimo_ciclo.fecha)} · ${panel.ultimo_ciclo.resultado}` : "—"} />
+          <Fila k="Revisiones programadas" v={panel ? `${panel.ciclos.programados ?? 0} (cada ${panel.ciclos.intervalo_s >= 60 ? `${Math.round(panel.ciclos.intervalo_s / 60)} min` : `${panel.ciclos.intervalo_s} s`})` : "—"} />
+          <Fila k="Última revisión" v={panel?.ciclos.ultimo ? fechaCorta(panel.ciclos.ultimo) : "—"} />
         </Tarjeta>
         <Tarjeta titulo="Pronóstico del modelo">
           <Dato grande clase={d && d.pronostico > 0 ? "pos" : "neg"}>{d ? `${d.pronostico > 0 ? "+" : ""}${pct(d.pronostico, 3)}` : "—"}</Dato>
@@ -155,6 +157,23 @@ export default function App() {
           <Fila k="Posición" v={c ? `${num(c.unidades, 4)} ETH` : "—"} />
           <Fila k="Capital inicial" v={usd(c?.capital_inicial)} />
         </Tarjeta>
+        <Tarjeta titulo="LLM local (Ollama)">
+          {panel?.evidencia_llm ? (
+            <>
+              <Dato grande clase="sin-mayus">{panel.evidencia_llm.modelo.nombre}</Dato>
+              <Fila k="Ollama" v={`v${panel.evidencia_llm.ollama_version}`} />
+              <Fila k="Modelo" v={`${panel.evidencia_llm.modelo.parametros} · ${panel.evidencia_llm.modelo.cuantizacion}`} />
+              <Fila k="Procesador" v={panel.evidencia_llm.procesador} />
+              <Fila k="CPU" v={panel.evidencia_llm.hardware.cpu} />
+              <Fila k="RAM" v={panel.evidencia_llm.hardware.ram_gb ? `${panel.evidencia_llm.hardware.ram_gb} GB` : "—"} />
+              <Fila k="Latencia prueba" v={`${panel.evidencia_llm.inferencia.latencia_total_ms.toFixed(0)} ms`} />
+              <Fila k="Inferencia local" v={<span className={panel.evidencia_llm.inferencia_local ? "pos" : "neg"}>{panel.evidencia_llm.inferencia_local ? "sí (127.0.0.1)" : "no"}</span>} />
+              <Fila k="Registrada" v={fechaCorta(panel.evidencia_llm.fecha_utc)} />
+            </>
+          ) : <p className="motivo">Aún no hay evidencia registrada del LLM.</p>}
+          <Fila k="Herramientas (solo lectura)" v={panel?.llm_herramientas ? "activadas" : "desactivadas"} />
+          <button className="mini" disabled={ocupado} onClick={() => controlar("evidencia_llm")}>Registrar evidencia del LLM</button>
+        </Tarjeta>
       </section>
 
       <section className="bloque">
@@ -184,7 +203,10 @@ export default function App() {
       </section>
 
       <section className="bloque">
-        <h2>Bitácora de eventos y errores</h2>
+        <div className="titulo-con-accion">
+          <h2>Bitácora de eventos y errores</h2>
+          <a className="boton" href="/api/exportar" download>Exportar registros (CSV)</a>
+        </div>
         <table>
           <thead><tr><th>Fecha (UTC)</th><th>Etapa</th><th>Tipo</th><th>Mensaje</th><th>Acción</th></tr></thead>
           <tbody>
@@ -201,6 +223,7 @@ export default function App() {
 }
 
 function describir(accion: string, r: Record<string, unknown>) {
+  if (accion === "evidencia_llm") return `Evidencia registrada: ${(r.modelo as { nombre: string }).nombre}, ${Number((r.inferencia as { latencia_total_ms: number }).latencia_total_ms).toFixed(0)} ms, ${r.procesador}.`;
   if (accion === "ciclo") return `Ciclo: ${r.resultado}${r.mensaje ? ` — ${r.mensaje}` : ""}`;
   if (accion === "replay") return String(r.mensaje);
   if (accion === "liquidar") return r.resultado === "liquidado" ? "Posición liquidada en Paper." : "No había posición.";
@@ -227,13 +250,16 @@ function TablaDecisiones({ filas }: { filas: Decision[] }) {
   return (
     <div className="desplazable">
       <table>
-        <thead><tr><th>Vela</th><th>Cierre</th><th>Pronóstico</th><th>Señal</th><th>Propuesta</th><th>Final</th><th>Riesgo</th><th>Justificación</th></tr></thead>
+        <thead><tr><th>Vela</th><th>Cierre</th><th>Pronóstico</th><th>Señal</th><th>Propuesta</th><th>Final</th><th>Riesgo</th><th>Herramientas</th><th>Justificación</th></tr></thead>
         <tbody>
           {filas.map((f) => (
             <tr key={f.id}>
               <td>{f.fecha_vela}</td><td>{usd(f.precio_cierre)}</td><td>{pct(f.pronostico, 3)}</td><td>{f.senal_regla}</td>
               <td>{f.accion_propuesta ?? "—"}</td><td>{f.accion_final}</td>
               <td className={f.aprobada ? "pos" : "neg"}>{f.aprobada ? "aprobada" : "rechazada"}</td>
+              <td title={f.herramientas.map((h) => h.nombre ? `${h.nombre}(${JSON.stringify(h.argumentos ?? {})})${h.permitida === false ? " — bloqueada" : ""}` : h.aviso).join("\n")}>
+                {f.herramientas.filter((h) => h.nombre).length ? `🔧 ${f.herramientas.filter((h) => h.nombre).map((h) => h.nombre!.replace("consultar_", "")).join(", ")}` : "—"}
+              </td>
               <td className="just">{f.propuesta?.justificacion ?? f.motivo_riesgo}</td>
             </tr>
           ))}

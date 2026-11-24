@@ -27,7 +27,12 @@ CREATE TABLE IF NOT EXISTS patrimonio (
 CREATE TABLE IF NOT EXISTS errores (
     id INTEGER PRIMARY KEY AUTOINCREMENT, creado_en TEXT, etapa TEXT, tipo TEXT, mensaje TEXT, accion TEXT);
 CREATE TABLE IF NOT EXISTS estado (clave TEXT PRIMARY KEY, valor TEXT);
+CREATE TABLE IF NOT EXISTS ciclos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, inicio TEXT, fin TEXT, origen TEXT, resultado TEXT,
+    fecha_vela TEXT, detalle TEXT);
 """
+
+MIGRACIONES = [("decisiones", "herramientas", "TEXT")]
 
 
 def ahora() -> str:
@@ -42,6 +47,10 @@ class BaseDatos:
         self.con.row_factory = sqlite3.Row
         self.con.execute("PRAGMA journal_mode=WAL")
         self.con.executescript(ESQUEMA)
+        for tabla, columna, tipo in MIGRACIONES:          # bases creadas con versiones anteriores
+            cols = {r["name"] for r in self.con.execute(f"PRAGMA table_info({tabla})")}
+            if columna not in cols:
+                self.con.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}")
 
     # --- estado clave/valor ---
     def leer_estado(self, clave: str, defecto=None):

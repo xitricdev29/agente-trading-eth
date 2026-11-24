@@ -19,6 +19,7 @@ export interface Decision {
   aprobada: number;
   motivo_riesgo: string;
   latencia_llm_ms: number | null;
+  herramientas: UsoHerramienta[];
   modelo_version: string;
   llm_modelo: string | null;
 }
@@ -36,6 +37,27 @@ export interface Panel {
   riesgo: Record<string, number | boolean>;
   ultimo_ciclo: { fecha: string; resultado: string } | null;
   ultimo_error: ErrorReg | null;
+  llm_herramientas: boolean;
+  evidencia_llm: EvidenciaLLM | null;
+  ciclos: { intervalo_s: number; total: number; programados: number | null; primero: string | null; ultimo: string | null; velas: number };
+}
+
+export interface UsoHerramienta {
+  nombre?: string;
+  argumentos?: Record<string, unknown>;
+  permitida?: boolean;
+  resultado_resumen?: string;
+  aviso?: string;
+}
+
+export interface EvidenciaLLM {
+  fecha_utc: string;
+  ollama_version: string;
+  modelo: { nombre: string; parametros: string; cuantizacion: string; tamano_gb: number; digest: string };
+  inferencia: { latencia_total_ms: number; tokens_por_segundo: number | null; tiempo_carga_s: number };
+  procesador: string;
+  inferencia_local: boolean;
+  hardware: { sistema: string; cpu: string; ram_gb: number | null; gpus: string[] };
 }
 
 export interface ErrorReg {

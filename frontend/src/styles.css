@@ -89,3 +89,8 @@ figcaption { display: flex; gap: 16px; flex-wrap: wrap; font-size: .8rem; color:
 .leyenda { display: inline-flex; align-items: center; gap: 6px; }
 .leyenda i { width: 14px; height: 3px; display: inline-block; border-radius: 2px; }
 .leyenda i.ref { background: none; border-top: 2px dashed var(--serie-3); height: 0; }
+
+button.mini { margin-top: 10px; font-size: .8rem; padding: 6px 10px; }
+a.boton { font-size: .85rem; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--borde); color: var(--texto); text-decoration: none; background: var(--fondo); }
+a.boton:hover { border-color: var(--acento); }
+.dato.sin-mayus { text-transform: none; }

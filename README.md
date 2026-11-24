@@ -1,6 +1,6 @@
-# Agente de trading ETH/USDT con IA local — v0.1.2
+# Agente de trading ETH/USDT con IA local — v0.2.0
 
-![versión](https://img.shields.io/badge/versión-0.1.2-blue) ![modo](https://img.shields.io/badge/modo-Paper%20(sin%20órdenes%20reales)-orange) ![LLM](https://img.shields.io/badge/LLM-Ollama%20local-black) ![licencia](https://img.shields.io/badge/licencia-MIT-green)
+![versión](https://img.shields.io/badge/versión-0.2.0-blue) ![modo](https://img.shields.io/badge/modo-Paper%20(sin%20órdenes%20reales)-orange) ![LLM](https://img.shields.io/badge/LLM-Ollama%20local-black) ![licencia](https://img.shields.io/badge/licencia-MIT-green)
 
 Agente que **observa** velas diarias de ETH/USDT en MEXC, **consulta** un modelo de deep learning entrenado en la práctica de *Deep Learning para Finanzas*, **pide una propuesta** a un LLM que corre localmente con Ollama, la **valida** con controles de riesgo deterministas y la **ejecuta solo en simulación (Paper)**. Todo queda registrado en SQLite y se muestra en un panel web.
 
@@ -14,9 +14,10 @@ Agente que **observa** velas diarias de ETH/USDT en MEXC, **consulta** un modelo
 
 | Versión | Fecha | Contenido |
 |---|---|---|
-| **0.1.2** | 2026-11-19 | Instrucciones del LLM sin doble negación: campo `situacion` en lenguaje claro (EN EFECTIVO / CON POSICIÓN y sus dos opciones) y guía de decisión explícita. El JSON pide la justificación **antes** de la acción para que el modelo razone antes de elegir. Corrige que `llama3.2:3b` interpretara "sin posición" como "no se puede comprar" y se quedara 30 de 30 velas en efectivo. 35 pruebas. |
+| **0.2.0** | 2026-11-24 | **Herramientas de solo lectura para el LLM** (velas recientes, historial de decisiones, límites de riesgo) con lista blanca, máximo de 3 llamadas y registro por decisión. **Evidencia de Ollama local** (versión, modelo, cuantización, CPU/GPU, RAM, latencia y prueba sin red). **Bitácora del ciclo programado** (tabla `ciclos`). **Exportación de registros** a CSV desde la UI. Scripts `evidencia_ollama.py`, `exportar_registros.py` y `generar_informe.py`. 41 pruebas. |
+| 0.1.2 | 2026-11-19 | Instrucciones del LLM sin doble negación: campo `situacion` en lenguaje claro (EN EFECTIVO / CON POSICIÓN y sus dos opciones) y guía de decisión explícita. El JSON pide la justificación **antes** de la acción para que el modelo razone antes de elegir. Corrige que `llama3.2:3b` interpretara "sin posición" como "no se puede comprar" y se quedara 30 de 30 velas en efectivo. 35 pruebas. |
 | 0.1.1 | 2026-11-19 | El LLM solo puede proponer acciones válidas según la posición (esquema JSON con `enum` dinámico y `acciones_validas` en el contexto). Corrige que el modelo propusiera "comprar" con posición abierta y nunca vendiera (26 de 30 propuestas rechazadas en el primer replay con `llama3.2:3b`). 34 pruebas. |
-| 0.1.0 | 2026-11-17 | Primera entrega: ciclo completo del agente (datos → modelo → LLM local → riesgo → Paper → registro → UI), gateway con API key, modo replay con comparación, 35 pruebas automatizadas. |
+| 0.1.0 | 2026-11-17 | Primera entrega: ciclo completo del agente (datos → modelo → LLM local → riesgo → Paper → registro → UI), gateway con API key, modo replay con comparación, 33 pruebas automatizadas. |
 
 ## Tecnologías aplicadas
 
@@ -25,10 +26,10 @@ Agente que **observa** velas diarias de ETH/USDT en MEXC, **consulta** un modelo
 | Interfaz | **React 18 + TypeScript + Vite 5** | Panel: activo, fecha de vela, pronóstico, indicadores, acción propuesta y motivo, estado de riesgo, posición, patrimonio; botones iniciar, pausar y detener |
 | Backend | **Python 3.10+ · FastAPI · Uvicorn** | Coordina el ciclo, carga modelo y escalador, valida entradas y expone la API documentada (`/docs`) |
 | Modelo predictivo | **PyTorch** | MLP del capítulo 8 (promedio de 3 semillas) que pronostica el rendimiento del día siguiente a partir de 20 rezagos |
-| LLM local | **Ollama** (p. ej. `llama3.2:3b`) | Propone *comprar / mantener / vender* en JSON con esquema fijo; inferencia 100% local, sin nube |
-| Seguridad del LLM | **Gateway FastAPI con API key** | Ollama no tiene autenticación por defecto: el gateway exige `Bearer <clave>` y solo permite `/api/chat`, `/api/tags` y `/api/version` |
+| LLM local | **Ollama** (p. ej. `llama3.2:3b`) | Propone *comprar / mantener / vender* en JSON con esquema fijo; puede consultar **herramientas de solo lectura** antes de decidir; inferencia 100% local, sin nube |
+| Seguridad del LLM | **Gateway FastAPI con API key** | Ollama no tiene autenticación por defecto: el gateway exige `Bearer <clave>` y solo permite `/api/chat`, `/api/tags`, `/api/version`, `/api/show` y `/api/ps` (descargar o borrar modelos queda bloqueado) |
 | Datos de mercado | **API pública de MEXC** (`/api/v3/klines`, `exchangeInfo`, `ticker/price`) | Solo lectura, sin claves de trading |
-| Persistencia | **SQLite** | Velas procesadas, decisiones, órdenes Paper, patrimonio, errores y estado (recuperación tras reinicio) |
+| Persistencia | **SQLite** | Velas procesadas, decisiones, órdenes Paper, patrimonio, errores, ciclos y estado (recuperación tras reinicio); exportación a CSV |
 | Pruebas | **pytest** | Controles de riesgo, motor Paper, validación del LLM, gateway, idempotencia y los 9 escenarios de error |
 
 ## Arquitectura
@@ -50,7 +51,7 @@ flowchart LR
 
 1. **Observar:** pide las velas a MEXC, descarta la vela en curso, valida orden, duplicados, días consecutivos, precios y antigüedad (máximo 26 h).
 2. **Pronosticar:** calcula los 20 rezagos con la misma definición del entrenamiento (contrato en `backend/modelo/contrato.json`) y obtiene el rendimiento esperado del día siguiente.
-3. **Proponer:** envía al LLM local **solo datos** (precio, pronóstico, umbral δ, indicadores, posición y patrimonio simulados). El LLM nunca recibe claves ni configuración.
+3. **Proponer:** envía al LLM local **solo datos** (precio, pronóstico, umbral δ, indicadores, situación de la cartera y acciones válidas). En una primera ronda el LLM puede llamar **herramientas de solo lectura**; en la segunda responde la decisión en JSON. El LLM nunca recibe claves ni configuración.
 4. **Validar JSON:** Ollama genera con un esquema que solo admite las acciones válidas en ese estado (sin posición: mantener/comprar; con posición: mantener/vender). Además se exige `accion ∈ {comprar, mantener, vender}`, `simbolo = ETHUSDT`, la fecha exacta de la vela y una justificación. Cualquier desviación se rechaza.
 5. **Riesgo:** reglas deterministas que el LLM no puede saltarse ni modificar (exposición máxima, pérdida diaria, sin apalancamiento, sin ventas en corto, estado del agente).
 6. **Ejecutar en Paper** en la apertura de la vela siguiente (t+1), con deslizamiento, precisión y monto mínimo del par. Guarda decisión, orden y patrimonio en una sola transacción. **Una vela nunca se procesa dos veces.**
@@ -64,13 +65,15 @@ agente-trading-eth/
 │   ├── agente/            # config, mexc, modelo, llm, riesgo, paper, db, nucleo (ciclo)
 │   ├── config/riesgo.json # límites de riesgo (el LLM no puede modificarlos)
 │   ├── modelo/            # contrato.json + pesos versionados del modelo
-│   ├── scripts/exportar_modelo.py
-│   ├── tests/             # 35 pruebas automatizadas
+│   ├── scripts/           # exportar_modelo, evidencia_ollama, exportar_registros, generar_informe
+│   ├── tests/             # 41 pruebas automatizadas
 │   ├── gateway.py         # gateway con API key para Ollama
 │   ├── main.py            # API FastAPI
 │   ├── requirements.txt
 │   └── .env.example
-└── frontend/              # React + TypeScript + Vite
+├── frontend/              # React + TypeScript + Vite
+├── evidencia/             # evidencia_ollama*.json y registros exportados (CSV)
+└── docs/                  # RESULTADOS.md (generado) e INFORME.md
 ```
 
 ## Instalación y ejecución
@@ -126,16 +129,43 @@ pytest -q
 | **Detener** | Bloquea nuevas órdenes. **No liquida** la posición (`liquidar_al_detener: false`). |
 | **Liquidar posición** | Acción explícita: vende toda la posición Paper al precio actual. |
 | **Ejecutar ciclo ahora** | Ejecuta un ciclo inmediato; si la vela ya se procesó, responde `sin_vela_nueva`. |
+| **Registrar evidencia del LLM** | Consulta a Ollama (versión, modelo, cuantización, CPU/GPU, RAM y latencia) y la guarda. |
+| **Exportar registros (CSV)** | Descarga un ZIP con velas, decisiones, órdenes, patrimonio, errores, ciclos, replays y configuración (sin secretos). |
 | **Ejecutar replay** | Repite las últimas N velas cerradas (mínimo 20) con una cartera separada, **etiquetadas como replay**. Compara *agente con LLM*, *modelo sin LLM* y *comprar y mantener* con el mismo periodo y costos. |
 
 La frecuencia del modelo es diaria: el agente **no acelera artificialmente** las observaciones. Para demostrar 20 o más ciclos se usa el replay, que está etiquetado y separado de la operación en vivo.
+
+## Herramientas del LLM (permisos definidos)
+
+Antes de decidir, el LLM puede llamar estas herramientas. **Todas son de solo lectura** y solo ven datos disponibles al cierre de la vela actual:
+
+| Herramienta | Permiso | Devuelve |
+|---|---|---|
+| `consultar_velas_recientes(n ≤ 20)` | lectura | Últimas n velas diarias cerradas (fecha, cierre, rendimiento) |
+| `consultar_historial_decisiones(n ≤ 10)` | lectura | Sus decisiones anteriores y si el motor de riesgo las aprobó |
+| `consultar_limites_riesgo()` | lectura | Límites vigentes (no puede modificarlos) |
+
+Cualquier otra herramienta que el modelo intente llamar se **rechaza** y queda registrada como `permitida: false`. Hay un máximo de 3 llamadas por decisión. No existe ninguna herramienta que ejecute órdenes, cambie la configuración o lea secretos. Si el modelo no admite herramientas, el agente decide sin ellas y lo registra. Se pueden desactivar con `LLM_HERRAMIENTAS=0`.
+
+## Evidencia para la entrega
+
+Con el gateway y el backend encendidos (en Windows usa `.\.venv\Scripts\python.exe` en lugar de `python`):
+
+```bash
+cd backend
+python scripts/evidencia_ollama.py            # modelo, versión, hardware y latencia → evidencia/ollama_*.json
+python scripts/evidencia_ollama.py --sin-red  # con el Wi-Fi APAGADO: demuestra inferencia sin nube
+python scripts/exportar_registros.py          # base SQLite → evidencia/registros/*.csv
+python scripts/generar_informe.py             # tablas de resultados → docs/RESULTADOS.md
+pytest -v tests/test_escenarios_error.py      # los 9 escenarios de error
+```
 
 ## Seguridad y riesgo
 
 - **Secretos solo en el servidor:** `backend/.env` está en `.gitignore`. Se entrega `.env.example` vacío. El frontend no contiene claves ni variables `VITE_*` con secretos.
 - **El LLM no recibe API keys** ni datos de configuración (lo verifica `test_el_llm_no_recibe_secretos`). Los datos externos se tratan como datos, nunca como instrucciones.
 - **Sin órdenes reales:** `ORDENES_REALES_HABILITADAS = False`. El cliente de MEXC solo hace `GET` a endpoints públicos (lo verifica `test_no_existen_rutas_de_ordenes_reales`).
-- **Controles protegidos:** iniciar, pausar, detener, liquidar, ciclo y replay exigen `X-API-Key`. Los intentos inválidos se rechazan con 401 y se registran.
+- **Controles protegidos:** iniciar, pausar, detener, liquidar, ciclo, replay y registrar evidencia exigen `X-API-Key`. La configuración de riesgo solo se cambia editando `config/riesgo.json` en el servidor (no hay endpoint para cambiarla). Los intentos inválidos se rechazan con 401 y se registran.
 
 Límites en `backend/config/riesgo.json` (definidos antes de la prueba; el LLM no puede modificarlos):
 
@@ -176,7 +206,7 @@ python scripts/exportar_modelo.py --drive /ruta/a/DL_Finanzas_ETHUSDT --salida m
 
 > En la práctica, el modelo **no supera de forma consistente al pronóstico cero** en validación. El agente no promete rentabilidad: su objetivo es demostrar un ciclo de decisión seguro, trazable y evaluable.
 
-## Estado de la v0.1 y pendientes
+## Estado y pendientes
 
 - [x] Ciclo completo: datos MEXC → modelo → LLM local → validación → riesgo → Paper → SQLite → UI
 - [x] Gateway con API key para Ollama, con secretos solo en el servidor
@@ -184,9 +214,12 @@ python scripts/exportar_modelo.py --drive /ruta/a/DL_Finanzas_ETHUSDT --salida m
 - [x] Replay de 20 o más ciclos con comparación (LLM, sin LLM y comprar y mantener)
 - [x] Los 9 escenarios de error, cubiertos con pruebas automatizadas
 - [ ] Reemplazar los pesos de `backend/modelo/` por la exportación del notebook ejecutado en **T4** (los actuales vienen de una ejecución de prueba en CPU; ver `contrato.json → procedencia`)
-- [ ] Evidencia de una consulta real a Ollama: modelo, versión, hardware y tiempo de respuesta
-- [ ] Informe breve con los resultados de 20 ciclos y la evaluación de si el LLM aporta valor
-- [ ] Exportación de registros (CSV) desde la UI
+- [x] Herramientas de solo lectura para el LLM con lista blanca y registro
+- [x] Evidencia de Ollama local (botón en la UI y `scripts/evidencia_ollama.py`)
+- [x] Bitácora del ciclo programado y exportación de registros a CSV
+- [ ] Ejecutar `evidencia_ollama.py` (normal y `--sin-red`) en el equipo de demostración y subir `evidencia/`
+- [ ] Operación en vivo varios días (ciclo programado) + replay ≥ 20 velas con el LLM real
+- [ ] Informe breve (`docs/INFORME.md`) con la evaluación de si el LLM aporta valor
 
 ## Licencia
 

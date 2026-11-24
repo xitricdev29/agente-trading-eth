@@ -34,8 +34,10 @@ ESTADOS = ("detenido", "en_marcha", "pausado", "bloqueado")
 
 class Agente:
     def __init__(self, db: BaseDatos, mexc: ClienteMEXC, modelo: ModeloPredictivo, llm: ClienteLLM | None,
-                 cfg: ConfigRiesgo, politica: str = "llm", llm_modelo: str = "", reloj=lambda: int(time.time() * 1000)):
+                 cfg: ConfigRiesgo, politica: str = "llm", llm_modelo: str = "", reloj=lambda: int(time.time() * 1000),
+                 usar_herramientas: bool = True):
         self.db, self.mexc, self.modelo, self.llm, self.cfg = db, mexc, modelo, llm, cfg
+        self.usar_herramientas = usar_herramientas
         self.politica, self.llm_modelo, self.reloj = politica, llm_modelo, reloj
         self.candado = threading.RLock()
         self._par: InfoPar | None = None
@@ -75,6 +77,44 @@ class Agente:
             self.cambiar_estado("pausado", f"{e.tipo}: {e}")
         return {"resultado": "error", "tipo": e.tipo, "mensaje": str(e), "accion": accion}
 
+    # ---------------- herramientas del LLM (SOLO LECTURA) ----------------
+    def _herramientas(self, modo: str, corrida: str, politica: str, ventana: list) -> dict:
+        """Permisos: solo lectura de datos ya disponibles al cierre de la vela. Ninguna herramienta
+        opera, cambia la configuración, lee secretos ni ve datos posteriores a la vela actual."""
+        fecha = ventana[-1].fecha
+        cfg = self.cfg
+
+        def consultar_velas_recientes(n: int = 10):
+            n = max(1, min(int(n), len(ventana) - 1))
+            vs = ventana[-(n + 1):]
+            return [{"fecha": b.fecha, "cierre": round(b.close, 2), "rendimiento": round(b.close / a.close - 1, 5)}
+                    for a, b in zip(vs[:-1], vs[1:])]
+
+        def consultar_historial_decisiones(n: int = 5):
+            n = max(1, min(int(n), 10))
+            return self.db.filas(
+                "SELECT fecha_vela, accion_propuesta, accion_final, aprobada, precio_cierre FROM decisiones "
+                "WHERE modo=? AND corrida=? AND politica=? AND fecha_vela<? ORDER BY fecha_vela DESC LIMIT ?",
+                (modo, corrida, politica, fecha, n))
+
+        def consultar_limites_riesgo():
+            return {"exposicion_maxima": cfg.exposicion_maxima, "perdida_diaria_maxima": cfg.perdida_diaria_maxima,
+                    "costo": cfg.costo, "apalancamiento": False, "ventas_en_corto": False,
+                    "nota": "Solo lectura: el LLM no puede modificar estos límites."}
+
+        entero = lambda d, mx: {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": mx, "description": d}}}
+        return {
+            "consultar_velas_recientes": {"permiso": "lectura", "funcion": consultar_velas_recientes,
+                "descripcion": "Devuelve las últimas n velas diarias CERRADAS hasta la vela actual (fecha, cierre, rendimiento).",
+                "parametros": entero("número de velas (1-20)", 20)},
+            "consultar_historial_decisiones": {"permiso": "lectura", "funcion": consultar_historial_decisiones,
+                "descripcion": "Devuelve tus últimas n decisiones anteriores y si el motor de riesgo las aprobó.",
+                "parametros": entero("número de decisiones (1-10)", 10)},
+            "consultar_limites_riesgo": {"permiso": "lectura", "funcion": consultar_limites_riesgo,
+                "descripcion": "Devuelve los límites de riesgo vigentes (solo lectura).",
+                "parametros": {"type": "object", "properties": {}}},
+        }
+
     # ---------------- decisión común a vivo y replay ----------------
     def _decidir(self, modo: str, corrida: str, politica: str, ventana: list, precio_ej: float, fecha_ej: str,
                  cartera: Cartera, estado_eval: str) -> dict:
@@ -103,10 +143,11 @@ class Agente:
             "acciones_validas": ["mantener", "vender"] if cartera.en_posicion else ["mantener", "comprar"],
         }
 
-        latencia, propuesta, error_prop = None, None, None
+        latencia, propuesta, error_prop, uso_herr = None, None, None, []
         if politica == "llm":
+            herr = self._herramientas(modo, corrida, politica, ventana) if self.usar_herramientas else None
             try:
-                propuesta, latencia = self.llm.proponer(contexto)
+                propuesta, latencia, uso_herr = self.llm.proponer(contexto, herr)
             except ErrorRespuestaLLM as e:
                 error_prop = e
                 self.db.registrar_error("llm", e.tipo, str(e), "propuesta rechazada; sin operación en esta vela")
@@ -131,11 +172,12 @@ class Agente:
             cur = con.execute(
                 """INSERT INTO decisiones(modo, corrida, politica, fecha_vela, precio_cierre, pronostico, senal_regla,
                    indicadores, propuesta, accion_propuesta, accion_final, aprobada, motivo_riesgo, latencia_llm_ms,
-                   modelo_version, llm_modelo, creado_en) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   modelo_version, llm_modelo, creado_en, herramientas) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (modo, corrida, politica, fecha, cierre, pron, senal, json.dumps(v["indicadores"]),
                  json.dumps(propuesta, ensure_ascii=False) if propuesta else None,
                  propuesta["accion"] if propuesta else None, ver.accion_final, int(ver.aprobada), ver.motivo,
-                 latencia, self.modelo.version, self.llm_modelo if politica == "llm" else None, ahora()))
+                 latencia, self.modelo.version, self.llm_modelo if politica == "llm" else None, ahora(),
+                 json.dumps(uso_herr, ensure_ascii=False) if politica == "llm" else None))
             if orden:
                 con.execute(
                     """INSERT INTO ordenes(decision_id, modo, corrida, politica, fecha_vela, fecha_ejecucion, lado, cantidad,
@@ -155,10 +197,21 @@ class Agente:
             self.cambiar_estado("bloqueado", ver.motivo)
         return {"resultado": "decision", "fecha_vela": fecha, "pronostico": pron, "senal_regla": senal,
                 "propuesta": propuesta, "accion_final": ver.accion_final, "aprobada": ver.aprobada,
-                "motivo": ver.motivo, "orden": orden.__dict__ if orden else None, "latencia_llm_ms": latencia}
+                "motivo": ver.motivo, "orden": orden.__dict__ if orden else None, "latencia_llm_ms": latencia,
+                "herramientas": uso_herr}
 
     # ---------------- modo vivo ----------------
-    def ciclo_vivo(self) -> dict:
+    def ciclo_vivo(self, origen: str = "programado") -> dict:
+        """Ejecuta un ciclo y lo deja registrado en la tabla `ciclos` (evidencia del ciclo programado)."""
+        inicio = ahora()
+        r = self._ciclo_vivo()
+        if r.get("resultado") != "inactivo":
+            self.db.con.execute("INSERT INTO ciclos(inicio, fin, origen, resultado, fecha_vela, detalle) VALUES (?,?,?,?,?,?)",
+                                (inicio, ahora(), origen, r.get("resultado"), r.get("fecha_vela") or r.get("ultima_vela"),
+                                 (r.get("mensaje") or r.get("accion_final") or "")[:300]))
+        return r
+
+    def _ciclo_vivo(self) -> dict:
         with self.candado:
             if self.estado != "en_marcha":
                 return {"resultado": "inactivo", "estado": self.estado, "mensaje": "Inicia el agente para operar."}

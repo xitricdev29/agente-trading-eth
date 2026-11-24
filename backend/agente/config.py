@@ -54,6 +54,7 @@ class Ajustes:
     gateway_api_key: str = field(default_factory=lambda: os.getenv("OLLAMA_GATEWAY_API_KEY", ""))
     ollama_modelo: str = field(default_factory=lambda: os.getenv("OLLAMA_MODELO", "llama3.2:3b"))
     modo_decision: str = field(default_factory=lambda: os.getenv("MODO_DECISION", "llm"))   # llm | regla
+    llm_herramientas: bool = field(default_factory=lambda: os.getenv("LLM_HERRAMIENTAS", "1") == "1")  # herramientas de solo lectura
     intervalo_revision_s: int = field(default_factory=lambda: int(os.getenv("INTERVALO_REVISION_S", "300")))
     db_path: str = field(default_factory=lambda: os.getenv("DB_PATH", str(RAIZ / "datos" / "agente.db")))
     dir_modelo: str = field(default_factory=lambda: os.getenv("DIR_MODELO", str(RAIZ / "modelo")))

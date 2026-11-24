@@ -1,7 +1,7 @@
 """Gateway autenticado para Ollama local.
 
 Ollama no exige autenticación por defecto; este servicio agrega la capa de API key:
-- Escucha en 127.0.0.1:8100 y reenvía solo /api/chat, /api/tags y /api/version a Ollama (127.0.0.1:11434).
+- Escucha en 127.0.0.1:8100 y reenvía solo /api/chat, /api/tags, /api/version, /api/show y /api/ps a Ollama (127.0.0.1:11434).
 - Rechaza con 401 cualquier petición sin `Authorization: Bearer <OLLAMA_GATEWAY_API_KEY>` o con una clave incorrecta.
 - No registra la clave en logs. La clave vive solo en backend/.env (servidor), nunca en el frontend.
 
@@ -21,7 +21,9 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 log = logging.getLogger("gateway")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
-RUTAS_PERMITIDAS = {("POST", "/api/chat"), ("GET", "/api/tags"), ("GET", "/api/version")}
+# Solo inferencia y consulta de metadatos. Descargar, borrar o crear modelos queda bloqueado (403).
+RUTAS_PERMITIDAS = {("POST", "/api/chat"), ("GET", "/api/tags"), ("GET", "/api/version"),
+                    ("POST", "/api/show"), ("GET", "/api/ps")}
 
 
 def crear_app(clave: str | None = None, transporte=None) -> FastAPI:

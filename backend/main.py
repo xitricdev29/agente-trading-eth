@@ -9,7 +9,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field
 from agente import __version__
 from agente.config import ORDENES_REALES_HABILITADAS, SIMBOLO, Ajustes, ConfigRiesgo
 from agente.db import BaseDatos
+from agente.evidencia import recolectar
+from agente.exportar import zip_registros
 from agente.llm import ClienteLLM
 from agente.mexc import ClienteMEXC
 from agente.modelo import ModeloPredictivo
@@ -33,7 +35,8 @@ def construir(ajustes: Ajustes, mexc=None, llm=None, db=None) -> tuple[FastAPI, 
     db = db or BaseDatos(ajustes.db_path)
     llm = llm if llm is not None else ClienteLLM(ajustes.gateway_url, ajustes.gateway_api_key, ajustes.ollama_modelo)
     agente = Agente(db, mexc or ClienteMEXC(), ModeloPredictivo(ajustes.dir_modelo), llm, cfg,
-                    politica=ajustes.modo_decision, llm_modelo=ajustes.ollama_modelo)
+                    politica=ajustes.modo_decision, llm_modelo=ajustes.ollama_modelo,
+                    usar_herramientas=ajustes.llm_herramientas)
 
     @asynccontextmanager
     async def ciclo_de_vida(app):
@@ -91,6 +94,10 @@ def construir(ajustes: Ajustes, mexc=None, llm=None, db=None) -> tuple[FastAPI, 
                         "precio_valoracion": precio, "patrimonio": c.patrimonio(precio) if precio else c.efectivo,
                         "capital_inicial": agente.cfg.capital_inicial},
             "riesgo": agente.cfg.__dict__, "ultimo_ciclo": db.leer_estado("ultimo_ciclo"),
+            "llm_herramientas": agente.usar_herramientas, "evidencia_llm": db.leer_estado("evidencia_llm"),
+            "ciclos": {"intervalo_s": ajustes.intervalo_revision_s,
+                       **db.filas("SELECT COUNT(*) total, SUM(origen='programado') programados, MIN(inicio) primero, "
+                                  "MAX(inicio) ultimo, COUNT(DISTINCT fecha_vela) velas FROM ciclos")[0]},
             "ultimo_error": err[0] if err else None,
         }
 
@@ -101,6 +108,7 @@ def construir(ajustes: Ajustes, mexc=None, llm=None, db=None) -> tuple[FastAPI, 
         for f in filas:
             f["indicadores"] = json.loads(f["indicadores"] or "{}")
             f["propuesta"] = json.loads(f["propuesta"]) if f["propuesta"] else None
+            f["herramientas"] = json.loads(f["herramientas"]) if f.get("herramientas") else []
         return filas
 
     @app.get("/api/ordenes")
@@ -114,6 +122,23 @@ def construir(ajustes: Ajustes, mexc=None, llm=None, db=None) -> tuple[FastAPI, 
     @app.get("/api/errores")
     def errores(limite: int = Query(50, le=500)):
         return db.filas("SELECT * FROM errores ORDER BY id DESC LIMIT ?", (limite,))
+
+    @app.get("/api/ciclos")
+    def ciclos(limite: int = Query(50, le=1000)):
+        """Bitácora del ciclo programado: cada revisión automática (o manual) y su resultado."""
+        return db.filas("SELECT * FROM ciclos ORDER BY id DESC LIMIT ?", (limite,))
+
+    @app.get("/api/llm/evidencia")
+    def evidencia_llm():
+        return db.leer_estado("evidencia_llm")
+
+    @app.get("/api/exportar")
+    def exportar():
+        """ZIP con CSV de velas, decisiones, órdenes, patrimonio, errores y ciclos + replays y configuración (sin secretos)."""
+        from datetime import datetime, timezone
+        datos = zip_registros(db, agente.cfg.__dict__, agente.modelo.contrato)
+        nombre = f"registros_agente_{datetime.now(timezone.utc):%Y%m%d_%H%M}.zip"
+        return Response(datos, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
 
     @app.get("/api/replays")
     def replays():
@@ -144,7 +169,20 @@ def construir(ajustes: Ajustes, mexc=None, llm=None, db=None) -> tuple[FastAPI, 
     @app.post("/api/control/ciclo", dependencies=[Depends(requiere_clave)])
     def ciclo():
         """Ejecuta un ciclo ahora (solo si el agente está en marcha). Si no hay vela nueva, no opera."""
-        return agente.ciclo_vivo()
+        return agente.ciclo_vivo(origen="manual")
+
+    @app.post("/api/control/evidencia_llm", dependencies=[Depends(requiere_clave)])
+    def registrar_evidencia_llm():
+        """Consulta a Ollama (versión, modelo, hardware, tiempo de respuesta) y guarda la evidencia."""
+        if agente.llm is None:
+            raise HTTPException(409, "El agente no tiene LLM configurado.")
+        try:
+            e = recolectar(agente.llm)
+        except Exception as ex:
+            db.registrar_error("evidencia_llm", type(ex).__name__, str(ex), "evidencia no registrada")
+            raise HTTPException(502, f"No se pudo consultar Ollama: {ex}")
+        db.guardar_estado("evidencia_llm", e)
+        return e
 
     class PeticionReplay(BaseModel):
         ciclos: int = Field(30, ge=20, le=200, description="Número de velas a repetir (mínimo 20 ciclos)")
