@@ -20,6 +20,7 @@ export interface Decision {
   motivo_riesgo: string;
   latencia_llm_ms: number | null;
   herramientas: UsoHerramienta[];
+  asesor_externo: { opinion?: string; latencia_ms?: number; error?: string } | null;
   modelo_version: string;
   llm_modelo: string | null;
 }
@@ -38,6 +39,7 @@ export interface Panel {
   ultimo_ciclo: { fecha: string; resultado: string } | null;
   ultimo_error: ErrorReg | null;
   llm_herramientas: boolean;
+  asesor_externo: boolean;
   evidencia_llm: EvidenciaLLM | null;
   ciclos: { intervalo_s: number; total: number; programados: number | null; primero: string | null; ultimo: string | null; velas: number };
 }

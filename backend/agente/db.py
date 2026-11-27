@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS ciclos (
     fecha_vela TEXT, detalle TEXT);
 """
 
-MIGRACIONES = [("decisiones", "herramientas", "TEXT")]
+MIGRACIONES = [("decisiones", "herramientas", "TEXT"), ("decisiones", "asesor_externo", "TEXT")]
 
 
 def ahora() -> str:

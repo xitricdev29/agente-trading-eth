@@ -87,7 +87,7 @@ export default function App() {
         <div>
           <h1>Agente ETH/USDT</h1>
           <p className="sub">
-            v{panel?.version ?? "0.2.0"} · modo <b>Paper</b> (sin órdenes reales) · datos públicos de MEXC · LLM local {panel?.llm_modelo ?? ""}
+            v{panel?.version ?? "0.3.0"} · modo <b>Paper</b> (sin órdenes reales) · datos públicos de MEXC · LLM local {panel?.llm_modelo ?? ""}
           </p>
         </div>
         <span className={`estado estado-${panel?.estado ?? "desconocido"}`}>
@@ -172,6 +172,7 @@ export default function App() {
             </>
           ) : <p className="motivo">Aún no hay evidencia registrada del LLM.</p>}
           <Fila k="Herramientas (solo lectura)" v={panel?.llm_herramientas ? "activadas" : "desactivadas"} />
+          <Fila k="Asesor externo (apoyo)" v={panel?.asesor_externo ? "configurado" : "no configurado"} />
           <button className="mini" disabled={ocupado} onClick={() => controlar("evidencia_llm")}>Registrar evidencia del LLM</button>
         </Tarjeta>
       </section>
@@ -260,7 +261,9 @@ function TablaDecisiones({ filas }: { filas: Decision[] }) {
               <td title={f.herramientas.map((h) => h.nombre ? `${h.nombre}(${JSON.stringify(h.argumentos ?? {})})${h.permitida === false ? " — bloqueada" : ""}` : h.aviso).join("\n")}>
                 {f.herramientas.filter((h) => h.nombre).length ? `🔧 ${f.herramientas.filter((h) => h.nombre).map((h) => h.nombre!.replace("consultar_", "")).join(", ")}` : "—"}
               </td>
-              <td className="just">{f.propuesta?.justificacion ?? f.motivo_riesgo}</td>
+              <td className="just">{f.propuesta?.justificacion ?? f.motivo_riesgo}
+                {f.asesor_externo && <div className="nota-asesor">Asesor externo: {f.asesor_externo.opinion ?? `no disponible (${f.asesor_externo.error})`}</div>}
+              </td>
             </tr>
           ))}
         </tbody>

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from agente import __version__
 from agente.config import ORDENES_REALES_HABILITADAS, SIMBOLO, Ajustes, ConfigRiesgo
+from agente.asesor import ClienteAsesor
 from agente.db import BaseDatos
 from agente.evidencia import recolectar
 from agente.exportar import zip_registros
@@ -36,7 +37,9 @@ def construir(ajustes: Ajustes, mexc=None, llm=None, db=None) -> tuple[FastAPI, 
     llm = llm if llm is not None else ClienteLLM(ajustes.gateway_url, ajustes.gateway_api_key, ajustes.ollama_modelo)
     agente = Agente(db, mexc or ClienteMEXC(), ModeloPredictivo(ajustes.dir_modelo), llm, cfg,
                     politica=ajustes.modo_decision, llm_modelo=ajustes.ollama_modelo,
-                    usar_herramientas=ajustes.llm_herramientas)
+                    usar_herramientas=ajustes.llm_herramientas,
+                    asesor=(ClienteAsesor(ajustes.asesor_url, ajustes.asesor_api_key, ajustes.asesor_encabezado, ajustes.asesor_prefijo)
+                            if ajustes.asesor_url and ajustes.asesor_api_key else None))
 
     @asynccontextmanager
     async def ciclo_de_vida(app):
@@ -72,7 +75,8 @@ def construir(ajustes: Ajustes, mexc=None, llm=None, db=None) -> tuple[FastAPI, 
     def salud():
         return {"version": __version__, "simbolo": SIMBOLO, "estado": agente.estado, "politica": agente.politica,
                 "modelo_version": agente.modelo.version, "modelo_tipo": agente.modelo.tipo,
-                "llm_modelo": ajustes.ollama_modelo, "ordenes_reales": ORDENES_REALES_HABILITADAS}
+                "llm_modelo": ajustes.ollama_modelo, "ordenes_reales": ORDENES_REALES_HABILITADAS,
+                "asesor_externo_configurado": agente.asesor is not None}
 
     @app.get("/api/panel")
     def panel():
@@ -94,7 +98,7 @@ def construir(ajustes: Ajustes, mexc=None, llm=None, db=None) -> tuple[FastAPI, 
                         "precio_valoracion": precio, "patrimonio": c.patrimonio(precio) if precio else c.efectivo,
                         "capital_inicial": agente.cfg.capital_inicial},
             "riesgo": agente.cfg.__dict__, "ultimo_ciclo": db.leer_estado("ultimo_ciclo"),
-            "llm_herramientas": agente.usar_herramientas, "evidencia_llm": db.leer_estado("evidencia_llm"),
+            "llm_herramientas": agente.usar_herramientas, "asesor_externo": agente.asesor is not None, "evidencia_llm": db.leer_estado("evidencia_llm"),
             "ciclos": {"intervalo_s": ajustes.intervalo_revision_s,
                        **db.filas("SELECT COUNT(*) total, SUM(origen='programado') programados, MIN(inicio) primero, "
                                   "MAX(inicio) ultimo, COUNT(DISTINCT fecha_vela) velas FROM ciclos")[0]},
@@ -109,6 +113,7 @@ def construir(ajustes: Ajustes, mexc=None, llm=None, db=None) -> tuple[FastAPI, 
             f["indicadores"] = json.loads(f["indicadores"] or "{}")
             f["propuesta"] = json.loads(f["propuesta"]) if f["propuesta"] else None
             f["herramientas"] = json.loads(f["herramientas"]) if f.get("herramientas") else []
+            f["asesor_externo"] = json.loads(f["asesor_externo"]) if f.get("asesor_externo") else None
         return filas
 
     @app.get("/api/ordenes")

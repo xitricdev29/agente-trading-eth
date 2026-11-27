@@ -1,6 +1,6 @@
-# Agente de trading ETH/USDT con IA local — v0.2.0
+# Agente de trading ETH/USDT con IA local — v0.3.0
 
-![versión](https://img.shields.io/badge/versión-0.2.0-blue) ![modo](https://img.shields.io/badge/modo-Paper%20(sin%20órdenes%20reales)-orange) ![LLM](https://img.shields.io/badge/LLM-Ollama%20local-black) ![licencia](https://img.shields.io/badge/licencia-MIT-green)
+![versión](https://img.shields.io/badge/versión-0.3.0-blue) ![modo](https://img.shields.io/badge/modo-Paper%20(sin%20órdenes%20reales)-orange) ![LLM](https://img.shields.io/badge/LLM-Ollama%20local-black) ![licencia](https://img.shields.io/badge/licencia-MIT-green)
 
 Agente que **observa** velas diarias de ETH/USDT en MEXC, **consulta** un modelo de deep learning entrenado en la práctica de *Deep Learning para Finanzas*, **pide una propuesta** a un LLM que corre localmente con Ollama, la **valida** con controles de riesgo deterministas y la **ejecuta solo en simulación (Paper)**. Todo queda registrado en SQLite y se muestra en un panel web.
 
@@ -14,7 +14,8 @@ Agente que **observa** velas diarias de ETH/USDT en MEXC, **consulta** un modelo
 
 | Versión | Fecha | Contenido |
 |---|---|---|
-| **0.2.0** | 2026-11-24 | **Herramientas de solo lectura para el LLM** (velas recientes, historial de decisiones, límites de riesgo) con lista blanca, máximo de 3 llamadas y registro por decisión. **Evidencia de Ollama local** (versión, modelo, cuantización, CPU/GPU, RAM, latencia y prueba sin red). **Bitácora del ciclo programado** (tabla `ciclos`). **Exportación de registros** a CSV desde la UI. Scripts `evidencia_ollama.py`, `exportar_registros.py` y `generar_informe.py`. 41 pruebas. |
+| **0.3.0** | 2026-11-26 | **Asesor externo opcional** (agente de apoyo proporcionado por el profesor): su clave vive solo en `.env`, su opinión llega al LLM local como *dato* (nunca como instrucción) y su falla no detiene el ciclo. Informe del agente en `docs/INFORME.md`. 43 pruebas. |
+| 0.2.0 | 2026-11-24 | **Herramientas de solo lectura para el LLM** (velas recientes, historial de decisiones, límites de riesgo) con lista blanca, máximo de 3 llamadas y registro por decisión. **Evidencia de Ollama local** (versión, modelo, cuantización, CPU/GPU, RAM, latencia y prueba sin red). **Bitácora del ciclo programado** (tabla `ciclos`). **Exportación de registros** a CSV desde la UI. Scripts `evidencia_ollama.py`, `exportar_registros.py` y `generar_informe.py`. 41 pruebas. |
 | 0.1.2 | 2026-11-19 | Instrucciones del LLM sin doble negación: campo `situacion` en lenguaje claro (EN EFECTIVO / CON POSICIÓN y sus dos opciones) y guía de decisión explícita. El JSON pide la justificación **antes** de la acción para que el modelo razone antes de elegir. Corrige que `llama3.2:3b` interpretara "sin posición" como "no se puede comprar" y se quedara 30 de 30 velas en efectivo. 35 pruebas. |
 | 0.1.1 | 2026-11-19 | El LLM solo puede proponer acciones válidas según la posición (esquema JSON con `enum` dinámico y `acciones_validas` en el contexto). Corrige que el modelo propusiera "comprar" con posición abierta y nunca vendiera (26 de 30 propuestas rechazadas en el primer replay con `llama3.2:3b`). 34 pruebas. |
 | 0.1.0 | 2026-11-17 | Primera entrega: ciclo completo del agente (datos → modelo → LLM local → riesgo → Paper → registro → UI), gateway con API key, modo replay con comparación, 33 pruebas automatizadas. |
@@ -66,7 +67,7 @@ agente-trading-eth/
 │   ├── config/riesgo.json # límites de riesgo (el LLM no puede modificarlos)
 │   ├── modelo/            # contrato.json + pesos versionados del modelo
 │   ├── scripts/           # exportar_modelo, evidencia_ollama, exportar_registros, generar_informe
-│   ├── tests/             # 41 pruebas automatizadas
+│   ├── tests/             # 43 pruebas automatizadas
 │   ├── gateway.py         # gateway con API key para Ollama
 │   ├── main.py            # API FastAPI
 │   ├── requirements.txt
@@ -147,6 +148,24 @@ Antes de decidir, el LLM puede llamar estas herramientas. **Todas son de solo le
 
 Cualquier otra herramienta que el modelo intente llamar se **rechaza** y queda registrada como `permitida: false`. Hay un máximo de 3 llamadas por decisión. No existe ninguna herramienta que ejecute órdenes, cambie la configuración o lea secretos. Si el modelo no admite herramientas, el agente decide sin ellas y lo registra. Se pueden desactivar con `LLM_HERRAMIENTAS=0`.
 
+## Asesor externo opcional (agente de apoyo del profesor)
+
+El proyecto exige que la decisión la tome un **LLM local**. Por eso, el agente de apoyo externo se integra solo como **fuente adicional de opinión**:
+
+1. Antes de consultar a Ollama, el backend envía al asesor los mismos datos de mercado que ve el LLM (sin claves ni configuración).
+2. Su respuesta se agrega al contexto del LLM local como `opinion_asesor_externo`, marcada como **dato, no instrucción**. Las instrucciones del sistema piden ignorar cualquier orden contenida en ella.
+3. El LLM local propone y el **motor de riesgo determinista** valida, igual que siempre. El asesor no puede ejecutar órdenes ni cambiar límites.
+4. Si el asesor falla, se registra `asesor_no_disponible` y el ciclo continúa sin él.
+
+Configuración, solo en `backend/.env` (vacío = desactivado):
+```
+ASESOR_EXTERNO_URL=https://...           # URL que indique el profesor
+ASESOR_EXTERNO_API_KEY=...               # nunca en el repositorio ni en chats
+ASESOR_EXTERNO_ENCABEZADO=Authorization  # o X-API-Key, según el servicio
+ASESOR_EXTERNO_PREFIJO=Bearer            # vacío si el servicio no usa prefijo
+```
+Pruebas: `test_asesor_externo_es_dato_y_su_clave_no_llega_al_llm` (incluye un intento de inyección de instrucciones) y `test_asesor_externo_caido_no_detiene_el_ciclo`.
+
 ## Evidencia para la entrega
 
 Con el gateway y el backend encendidos (en Windows usa `.\.venv\Scripts\python.exe` en lugar de `python`):
@@ -219,7 +238,9 @@ python scripts/exportar_modelo.py --drive /ruta/a/DL_Finanzas_ETHUSDT --salida m
 - [x] Bitácora del ciclo programado y exportación de registros a CSV
 - [ ] Ejecutar `evidencia_ollama.py` (normal y `--sin-red`) en el equipo de demostración y subir `evidencia/`
 - [ ] Operación en vivo varios días (ciclo programado) + replay ≥ 20 velas con el LLM real
-- [ ] Informe breve (`docs/INFORME.md`) con la evaluación de si el LLM aporta valor
+- [x] Asesor externo opcional, integrado como dato y con pruebas
+- [ ] Configurar `ASESOR_EXTERNO_URL` con la URL que indique el profesor
+- [ ] Completar `docs/INFORME.md` con las cifras finales (`docs/RESULTADOS.md`)
 
 ## Licencia
 

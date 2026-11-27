@@ -55,6 +55,11 @@ class Ajustes:
     ollama_modelo: str = field(default_factory=lambda: os.getenv("OLLAMA_MODELO", "llama3.2:3b"))
     modo_decision: str = field(default_factory=lambda: os.getenv("MODO_DECISION", "llm"))   # llm | regla
     llm_herramientas: bool = field(default_factory=lambda: os.getenv("LLM_HERRAMIENTAS", "1") == "1")  # herramientas de solo lectura
+    # Asesor externo opcional (agente de apoyo del profesor). Vacío = desactivado.
+    asesor_url: str = field(default_factory=lambda: os.getenv("ASESOR_EXTERNO_URL", ""))
+    asesor_api_key: str = field(default_factory=lambda: os.getenv("ASESOR_EXTERNO_API_KEY", ""))
+    asesor_encabezado: str = field(default_factory=lambda: os.getenv("ASESOR_EXTERNO_ENCABEZADO", "Authorization"))
+    asesor_prefijo: str = field(default_factory=lambda: os.getenv("ASESOR_EXTERNO_PREFIJO", "Bearer "))
     intervalo_revision_s: int = field(default_factory=lambda: int(os.getenv("INTERVALO_REVISION_S", "300")))
     db_path: str = field(default_factory=lambda: os.getenv("DB_PATH", str(RAIZ / "datos" / "agente.db")))
     dir_modelo: str = field(default_factory=lambda: os.getenv("DIR_MODELO", str(RAIZ / "modelo")))
