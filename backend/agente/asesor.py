@@ -36,11 +36,14 @@ def _extraer_texto(d) -> str:
 
 class ClienteAsesor:
     def __init__(self, url: str, api_key: str, encabezado: str = "Authorization", prefijo: str = "Bearer ",
-                 timeout: float = 20.0, transporte=None):
-        self.url = url
+                 timeout: float = 20.0, transporte=None, ca: str = "", formato: str = "generico", modelo: str = ""):
+        """formato: 'generico' (POST con datos JSON) u 'openai' (POST /v1/chat/completions con model y messages).
+        ca: ruta al certificado raíz del servidor (p. ej. localia-root-ca.crt). La confianza queda limitada a este cliente."""
+        self.url, self.formato, self.modelo = url, formato, modelo
         if prefijo and not prefijo.endswith(" "):          # .env recorta espacios finales: "Bearer" → "Bearer "
             prefijo += " "
-        self._http = httpx.Client(timeout=timeout, transport=transporte,
+        verificar = ca if ca else True                       # nunca se desactiva la verificación TLS
+        self._http = httpx.Client(timeout=timeout, transport=transporte, verify=verificar,
                                   headers={encabezado: f"{prefijo}{api_key}", "Content-Type": "application/json"})
 
     def consultar(self, contexto: dict) -> tuple[str, float]:
@@ -48,6 +51,11 @@ class ClienteAsesor:
         cuerpo = {"simbolo": SIMBOLO, "fecha_vela": contexto.get("fecha_vela"),
                   "pregunta": "Opinión breve sobre comprar, mantener o vender ETHUSDT en simulación (Paper) con estos datos.",
                   "datos": {k: v for k, v in contexto.items() if k != "opinion_asesor_externo"}}
+        if self.formato == "openai":
+            cuerpo = {"model": self.modelo, "temperature": 0, "stream": False, "messages": [
+                {"role": "system", "content": "Eres un asesor de apoyo para un agente de trading SIMULADO (Paper). "
+                                              "Da una opinión breve (máximo 3 frases) basada solo en los datos recibidos."},
+                {"role": "user", "content": json.dumps(cuerpo, ensure_ascii=False)}]}
         t0 = time.perf_counter()
         r = self._http.post(self.url, json=cuerpo)
         r.raise_for_status()

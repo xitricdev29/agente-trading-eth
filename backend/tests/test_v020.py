@@ -142,3 +142,15 @@ def test_asesor_externo_caido_no_detiene_el_ciclo(crear_agente):
     r = ag.ciclo_vivo()
     assert r["resultado"] == "decision" and r["orden"] is not None and ag.estado == "en_marcha"
     assert ag.db.filas("SELECT * FROM errores WHERE tipo='asesor_no_disponible'")
+
+
+def test_asesor_formato_openai():
+    from agente.asesor import ClienteAsesor
+    visto = {}
+    def srv(req):
+        visto.update(json.loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"role": "assistant", "content": "Tendencia bajista; prudencia."}}]})
+    a = ClienteAsesor("https://192.168.4.59:8443/v1/chat/completions", "x" * 20, formato="openai", modelo="m",
+                      transporte=httpx.MockTransport(srv))
+    texto, _ = a.consultar({"fecha_vela": "2026-11-26", "senal_regla": "comprar"})
+    assert texto == "Tendencia bajista; prudencia." and visto["model"] == "m" and visto["messages"][0]["role"] == "system"

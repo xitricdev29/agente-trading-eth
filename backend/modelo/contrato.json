@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0",
+  "version": "0.3.1",
   "simbolo": "ETHUSDT",
   "intervalo": "1d",
   "objetivo": "rendimiento simple del día siguiente: close[t+1]/close[t] - 1",
@@ -77,7 +77,7 @@
     "escala": 0.045632929263897025
   },
   "tipo": "MLP",
-  "neuronas": 16,
+  "neuronas": 32,
   "dropout": 0.2,
   "semillas": [
     101,
@@ -88,9 +88,9 @@
   "umbral_delta": 0.0005,
   "regla": "comprar si pronóstico > 0.0005; en otro caso efectivo",
   "procedencia": {
-    "notebook": "Cap7_9_DL_Finanzas_ETHUSDT_SebastianLopez.ipynb",
-    "entrenamiento_dispositivo": "ninguna",
-    "valido_t4": false,
-    "exportado_utc": "2026-11-17T19:57:59+00:00"
+    "notebook": "Practica_DL_Finanzas_ETHUSDT_SebastianLopez.ipynb (capítulos 7-11)",
+    "entrenamiento_dispositivo": "Tesla T4",
+    "valido_t4": true,
+    "exportado_utc": "2026-11-27T02:47:26+00:00"
   }
 }

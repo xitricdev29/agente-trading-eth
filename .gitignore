@@ -24,3 +24,6 @@ frontend/dist/
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Certificados locales (cada quien coloca el suyo)
+backend/certs/

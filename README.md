@@ -1,6 +1,6 @@
-# Agente de trading ETH/USDT con IA local — v0.3.0
+# Agente de trading ETH/USDT con IA local — v0.3.1
 
-![versión](https://img.shields.io/badge/versión-0.3.0-blue) ![modo](https://img.shields.io/badge/modo-Paper%20(sin%20órdenes%20reales)-orange) ![LLM](https://img.shields.io/badge/LLM-Ollama%20local-black) ![licencia](https://img.shields.io/badge/licencia-MIT-green)
+![versión](https://img.shields.io/badge/versión-0.3.1-blue) ![modo](https://img.shields.io/badge/modo-Paper%20(sin%20órdenes%20reales)-orange) ![LLM](https://img.shields.io/badge/LLM-Ollama%20local-black) ![licencia](https://img.shields.io/badge/licencia-MIT-green)
 
 Agente que **observa** velas diarias de ETH/USDT en MEXC, **consulta** un modelo de deep learning entrenado en la práctica de *Deep Learning para Finanzas*, **pide una propuesta** a un LLM que corre localmente con Ollama, la **valida** con controles de riesgo deterministas y la **ejecuta solo en simulación (Paper)**. Todo queda registrado en SQLite y se muestra en un panel web.
 
@@ -14,7 +14,8 @@ Agente que **observa** velas diarias de ETH/USDT en MEXC, **consulta** un modelo
 
 | Versión | Fecha | Contenido |
 |---|---|---|
-| **0.3.0** | 2026-11-26 | **Asesor externo opcional** (agente de apoyo proporcionado por el profesor): su clave vive solo en `.env`, su opinión llega al LLM local como *dato* (nunca como instrucción) y su falla no detiene el ciclo. Informe del agente en `docs/INFORME.md`. 43 pruebas. |
+| **0.3.1** | 2026-11-26 | **Modelo entrenado en Colab con GPU Tesla T4** (MLP de 32 neuronas, 3 semillas; `contrato.json → procedencia.valido_t4 = true`). Asesor externo: certificado raíz propio (`ASESOR_EXTERNO_CA`, sin instalarlo en Windows), formato OpenAI opcional y `scripts/probar_asesor.py` para detectar la API. 44 pruebas. |
+| 0.3.0 | 2026-11-26 | **Asesor externo opcional** (agente de apoyo proporcionado por el profesor): su clave vive solo en `.env`, su opinión llega al LLM local como *dato* (nunca como instrucción) y su falla no detiene el ciclo. Informe del agente en `docs/INFORME.md`. 43 pruebas. |
 | 0.2.0 | 2026-11-24 | **Herramientas de solo lectura para el LLM** (velas recientes, historial de decisiones, límites de riesgo) con lista blanca, máximo de 3 llamadas y registro por decisión. **Evidencia de Ollama local** (versión, modelo, cuantización, CPU/GPU, RAM, latencia y prueba sin red). **Bitácora del ciclo programado** (tabla `ciclos`). **Exportación de registros** a CSV desde la UI. Scripts `evidencia_ollama.py`, `exportar_registros.py` y `generar_informe.py`. 41 pruebas. |
 | 0.1.2 | 2026-11-19 | Instrucciones del LLM sin doble negación: campo `situacion` en lenguaje claro (EN EFECTIVO / CON POSICIÓN y sus dos opciones) y guía de decisión explícita. El JSON pide la justificación **antes** de la acción para que el modelo razone antes de elegir. Corrige que `llama3.2:3b` interpretara "sin posición" como "no se puede comprar" y se quedara 30 de 30 velas en efectivo. 35 pruebas. |
 | 0.1.1 | 2026-11-19 | El LLM solo puede proponer acciones válidas según la posición (esquema JSON con `enum` dinámico y `acciones_validas` en el contexto). Corrige que el modelo propusiera "comprar" con posición abierta y nunca vendiera (26 de 30 propuestas rechazadas en el primer replay con `llama3.2:3b`). 34 pruebas. |
@@ -67,7 +68,7 @@ agente-trading-eth/
 │   ├── config/riesgo.json # límites de riesgo (el LLM no puede modificarlos)
 │   ├── modelo/            # contrato.json + pesos versionados del modelo
 │   ├── scripts/           # exportar_modelo, evidencia_ollama, exportar_registros, generar_informe
-│   ├── tests/             # 43 pruebas automatizadas
+│   ├── tests/             # 44 pruebas automatizadas
 │   ├── gateway.py         # gateway con API key para Ollama
 │   ├── main.py            # API FastAPI
 │   ├── requirements.txt
@@ -163,7 +164,14 @@ ASESOR_EXTERNO_URL=https://...           # URL que indique el profesor
 ASESOR_EXTERNO_API_KEY=...               # nunca en el repositorio ni en chats
 ASESOR_EXTERNO_ENCABEZADO=Authorization  # o X-API-Key, según el servicio
 ASESOR_EXTERNO_PREFIJO=Bearer            # vacío si el servicio no usa prefijo
+ASESOR_EXTERNO_CA=certs/localia-root-ca.crt   # certificado raíz del servidor; solo este cliente confía en él
+ASESOR_EXTERNO_FORMATO=generico          # u openai (POST .../v1/chat/completions)
+ASESOR_EXTERNO_MODELO=                   # solo para formato openai
 ```
+
+Para descubrir qué API expone el servidor (en la red donde está disponible): `python scripts/probar_asesor.py`. Imprime solo códigos de estado, nunca la clave.
+
+> **No es necesario instalar la CA raíz en Windows:** basta con `ASESOR_EXTERNO_CA`, que limita la confianza a este cliente. La verificación TLS nunca se desactiva.
 Pruebas: `test_asesor_externo_es_dato_y_su_clave_no_llega_al_llm` (incluye un intento de inyección de instrucciones) y `test_asesor_externo_caido_no_detiene_el_ciclo`.
 
 ## Evidencia para la entrega
@@ -216,7 +224,7 @@ Cada escenario muestra un mensaje útil, se registra en la tabla `errores` y evi
 
 ## Modelo
 
-El modelo proviene del notebook de la práctica (capítulos 7 a 9): un MLP con 20 rezagos de rendimiento, cuyo pronóstico es el promedio de 3 semillas. La regla del capítulo 9 es comprar si el pronóstico es mayor que δ = 0.05%. `backend/modelo/contrato.json` versiona las variables, los escaladores (ajustados solo con TR), la arquitectura, el umbral y la procedencia.
+El modelo proviene del notebook de la práctica (capítulos 7 a 11), **entrenado en Colab con GPU Tesla T4**: un MLP de 32 neuronas con 20 rezagos de rendimiento, cuyo pronóstico es el promedio de 3 semillas. La regla del capítulo 9 es comprar si el pronóstico es mayor que δ = 0.05%. `backend/modelo/contrato.json` versiona las variables, los escaladores (ajustados solo con TR), la arquitectura, el umbral y la procedencia.
 
 Para actualizar el modelo con los artefactos entrenados en **Colab con GPU T4**:
 ```bash
@@ -232,7 +240,7 @@ python scripts/exportar_modelo.py --drive /ruta/a/DL_Finanzas_ETHUSDT --salida m
 - [x] Iniciar, pausar, detener y liquidar
 - [x] Replay de 20 o más ciclos con comparación (LLM, sin LLM y comprar y mantener)
 - [x] Los 9 escenarios de error, cubiertos con pruebas automatizadas
-- [ ] Reemplazar los pesos de `backend/modelo/` por la exportación del notebook ejecutado en **T4** (los actuales vienen de una ejecución de prueba en CPU; ver `contrato.json → procedencia`)
+- [x] Pesos del modelo exportados del notebook ejecutado en **Tesla T4** (`contrato.json → procedencia`)
 - [x] Herramientas de solo lectura para el LLM con lista blanca y registro
 - [x] Evidencia de Ollama local (botón en la UI y `scripts/evidencia_ollama.py`)
 - [x] Bitácora del ciclo programado y exportación de registros a CSV

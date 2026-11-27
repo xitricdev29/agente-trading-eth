@@ -38,7 +38,8 @@ def construir(ajustes: Ajustes, mexc=None, llm=None, db=None) -> tuple[FastAPI, 
     agente = Agente(db, mexc or ClienteMEXC(), ModeloPredictivo(ajustes.dir_modelo), llm, cfg,
                     politica=ajustes.modo_decision, llm_modelo=ajustes.ollama_modelo,
                     usar_herramientas=ajustes.llm_herramientas,
-                    asesor=(ClienteAsesor(ajustes.asesor_url, ajustes.asesor_api_key, ajustes.asesor_encabezado, ajustes.asesor_prefijo)
+                    asesor=(ClienteAsesor(ajustes.asesor_url, ajustes.asesor_api_key, ajustes.asesor_encabezado, ajustes.asesor_prefijo,
+                                  ca=ajustes.asesor_ca, formato=ajustes.asesor_formato, modelo=ajustes.asesor_modelo)
                             if ajustes.asesor_url and ajustes.asesor_api_key else None))
 
     @asynccontextmanager

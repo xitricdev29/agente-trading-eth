@@ -72,7 +72,7 @@ def main():
         "umbral_delta": regla["delta"],
         "regla": f"comprar si pronóstico > {regla['delta']}; en otro caso efectivo",
         "procedencia": {
-            "notebook": "Cap7_9_DL_Finanzas_ETHUSDT_SebastianLopez.ipynb",
+            "notebook": "Practica_DL_Finanzas_ETHUSDT_SebastianLopez.ipynb (capítulos 7-11)",
             "entrenamiento_dispositivo": evid.get("gpu", "desconocido"),
             "valido_t4": bool(evid.get("valida_para_entrega", False)),
             "exportado_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),

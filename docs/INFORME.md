@@ -1,7 +1,7 @@
 # Informe del proyecto final: agente de trading ETH/USDT con LLM local
 
 **Autor:** Sebastián López · **Materia:** Deep Learning para Finanzas · **Profesor:** Rubén Miguel Rodríguez Rangel · Universidad Iberoamericana León
-**Repositorio:** https://github.com/xitricdev29/agente-trading-eth · **Versión:** 0.3.0
+**Repositorio:** https://github.com/xitricdev29/agente-trading-eth · **Versión:** 0.3.1
 
 > Las cifras de este informe provienen de los registros del agente. Las tablas completas y actualizadas están en [`RESULTADOS.md`](RESULTADOS.md), que se regenera con `python scripts/generar_informe.py`. Las cifras marcadas con ⟳ se actualizan antes de entregar.
 
@@ -24,7 +24,7 @@ UI en **React + TypeScript + Vite** → backend **FastAPI** (Python) → datos p
 8. Registrar todo y mostrarlo en la UI.
 
 ## 3. Modelo predictivo
-MLP con 20 rezagos de rendimiento diario. El pronóstico es el promedio de 3 semillas, y la regla del capítulo 9 es comprar si el pronóstico es mayor que δ = 0.05%. `backend/modelo/contrato.json` versiona las variables, los escaladores (ajustados solo con TR), la arquitectura, el umbral y la procedencia. Los pesos se exportan del notebook ejecutado en **Colab con GPU T4** con `scripts/exportar_modelo.py`. ⟳
+MLP de 32 neuronas con 20 rezagos de rendimiento diario, **entrenado en Colab con GPU Tesla T4** (PyTorch 2.14, CUDA 13.0). El pronóstico es el promedio de 3 semillas, y la regla del capítulo 9 es comprar si el pronóstico es mayor que δ = 0.05%. `backend/modelo/contrato.json` versiona las variables, los escaladores (ajustados solo con TR), la arquitectura, el umbral y la procedencia. Los pesos se exportaron del notebook ejecutado en T4 con `scripts/exportar_modelo.py` (`procedencia.valido_t4 = true`).
 
 **Limitación conocida (práctica, capítulos 8, 9 y 11):** el modelo no supera de forma distinguible al pronóstico cero, ni en VA ni en TE. El agente no promete rentabilidad: su objetivo es un ciclo de decisión **seguro, trazable y evaluable**.
 

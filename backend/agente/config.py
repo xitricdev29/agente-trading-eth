@@ -60,6 +60,9 @@ class Ajustes:
     asesor_api_key: str = field(default_factory=lambda: os.getenv("ASESOR_EXTERNO_API_KEY", ""))
     asesor_encabezado: str = field(default_factory=lambda: os.getenv("ASESOR_EXTERNO_ENCABEZADO", "Authorization"))
     asesor_prefijo: str = field(default_factory=lambda: os.getenv("ASESOR_EXTERNO_PREFIJO", "Bearer "))
+    asesor_ca: str = field(default_factory=lambda: os.getenv("ASESOR_EXTERNO_CA", ""))
+    asesor_formato: str = field(default_factory=lambda: os.getenv("ASESOR_EXTERNO_FORMATO", "generico"))   # generico | openai
+    asesor_modelo: str = field(default_factory=lambda: os.getenv("ASESOR_EXTERNO_MODELO", ""))
     intervalo_revision_s: int = field(default_factory=lambda: int(os.getenv("INTERVALO_REVISION_S", "300")))
     db_path: str = field(default_factory=lambda: os.getenv("DB_PATH", str(RAIZ / "datos" / "agente.db")))
     dir_modelo: str = field(default_factory=lambda: os.getenv("DIR_MODELO", str(RAIZ / "modelo")))
